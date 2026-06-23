@@ -68,9 +68,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "eas": {
-        "projectId": "sparkhour-mobile"
-      }
+      "eas": {}
     }
   }
 }
