@@ -4,8 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { StyleSheet } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { useAuthListener } from '../hooks/useAuth';
 import { useAuthStore } from '../store/authStore';
+import { registerForPushNotifications } from '../lib/push';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 function AuthGate() {
@@ -30,7 +32,24 @@ function AuthGate() {
 
 export default function RootLayout() {
   useAuthListener();
-  const { isLoading } = useAuthStore();
+  const { isLoading, user } = useAuthStore();
+  const router = useRouter();
+
+  // Register this device for push once logged in.
+  useEffect(() => {
+    if (user?.id) registerForPushNotifications(user.id);
+  }, [user?.id]);
+
+  // Route taps on a notification to the right screen.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      const data = resp.notification.request.content.data as { screen?: string };
+      if (data?.screen === 'messages') router.push('/(tabs)/messages' as never);
+      else if (data?.screen === 'host') router.push('/host-dashboard' as never);
+      else router.push('/(tabs)/bookings' as never);
+    });
+    return () => sub.remove();
+  }, [router]);
 
   if (isLoading) {
     return <LoadingSpinner fullScreen />;
