@@ -40,3 +40,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# dev QR artifacts
+qr.png
+sparkhour-qr.png

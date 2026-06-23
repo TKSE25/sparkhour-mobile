@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "sparkhour",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ae.sparkhour.app",
@@ -40,7 +39,6 @@
       "expo-router",
       "expo-font",
       "expo-secure-store",
-      "expo-image",
       [
         "expo-splash-screen",
         {
