@@ -15,15 +15,15 @@ async function authToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-export async function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = await authToken();
   const res = await fetch(`${SITE_URL}${path}`, {
-    method: 'POST',
+    method,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   let json: Record<string, unknown> = {};
   try { json = await res.json(); } catch { /* non-JSON */ }
@@ -32,3 +32,7 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
   }
   return json as T;
 }
+
+export const apiGet = <T = unknown>(path: string) => request<T>('GET', path);
+export const apiPost = <T = unknown>(path: string, body: unknown) => request<T>('POST', path, body);
+export const apiPatch = <T = unknown>(path: string, body: unknown) => request<T>('PATCH', path, body);

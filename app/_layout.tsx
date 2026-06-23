@@ -64,6 +64,14 @@ export default function RootLayout() {
             headerTintColor: '#1e1245',
           }}
         />
+        <Stack.Screen
+          name="host-dashboard"
+          options={{
+            headerShown: true,
+            headerTitle: 'Host Dashboard',
+            headerTintColor: '#1e1245',
+          }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
       </StripeProvider>

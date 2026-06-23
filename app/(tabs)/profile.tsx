@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/colors';
 import { useAuthStore } from '../../store/authStore';
 import { signOut } from '../../hooks/useAuth';
@@ -45,6 +46,7 @@ function MenuItem({ icon, label, onPress, danger = false, badge }: MenuItemProps
 
 export default function ProfileScreen() {
   const { profile } = useAuthStore();
+  const router = useRouter();
 
   async function handleSignOut() {
     Alert.alert('Sign out?', 'You will need to sign in again.', [
@@ -89,9 +91,10 @@ export default function ProfileScreen() {
         {profile?.role === 'host' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Host</Text>
-            <MenuItem icon="home-outline" label="My Listings" onPress={() => {}} />
-            <MenuItem icon="stats-chart-outline" label="Earnings" onPress={() => {}} />
-            <MenuItem icon="calendar-outline" label="Manage Availability" onPress={() => {}} />
+            {/* Cast: expo-router typed-routes regenerates to include this new
+                screen on the next build; the route is valid at runtime. */}
+            <MenuItem icon="briefcase-outline" label="Host Dashboard" onPress={() => router.push('/host-dashboard' as never)} />
+            <MenuItem icon="stats-chart-outline" label="Booking Requests & Earnings" onPress={() => router.push('/host-dashboard' as never)} />
           </View>
         )}
 
