@@ -15,15 +15,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/colors';
 import { useSpace } from '../../hooks/useStudios';
-import { useAuthStore } from '../../store/authStore';
-import { supabase } from '../../lib/supabase';
+import { useStripe } from '@stripe/stripe-react-native';
+import { apiPost } from '../../lib/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
 export default function BookingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuthStore();
   const { space, isLoading } = useSpace(id);
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [date, setDate] = useState('');
   const [startHour, setStartHour] = useState('');
@@ -56,39 +56,67 @@ export default function BookingScreen() {
 
     setIsSubmitting(true);
 
-    const startIso = new Date(`${date}T${startHour.padStart(2, '0')}:00:00`).toISOString();
-    const endIso = new Date(
-      new Date(startIso).getTime() + numHours * 3600 * 1000
-    ).toISOString();
+    // Build HH:MM window. The SERVER re-derives hours/price/VAT from these.
+    const start = `${String(hNum).padStart(2, '0')}:00`;
+    const end = `${String((hNum + Math.round(numHours)) % 24).padStart(2, '0')}:00`;
 
-    const { data, error } = await supabase
-      .from('bookings')
-      .insert({
-        guest_id: user!.id,
-        space_id: id,
-        host_id: space!.host_id,
-        start_time: startIso,
-        end_time: endIso,
-        total_hours: numHours,
-        total_price: subtotal,
-        status: 'pending',
-        payment_status: 'unpaid',
-        coupon_code: coupon || null,
-        notes: notes || null,
-      })
-      .select()
-      .single();
+    try {
+      // 1) Server creates the booking — pricing, VAT, commission base,
+      //    availability + double-booking validation, and the sequential invoice
+      //    are ALL derived server-side (same endpoint the website uses).
+      const booking = await apiPost<{ id: string; total_amount: number; status: string }>(
+        '/api/bookings',
+        {
+          space_id: id,
+          date,
+          start_time: start,
+          end_time: end,
+          guest_count: 1,
+          special_requests: notes || undefined,
+          coupon_code: coupon || undefined,
+        }
+      );
 
-    setIsSubmitting(false);
+      // 2) Server creates the Stripe PaymentIntent: a HOLD for request-to-book
+      //    (captured when the host approves) or an immediate charge for Instant
+      //    Book. Returns the client secret.
+      const { clientSecret } = await apiPost<{ clientSecret: string }>(
+        '/api/payments/create-intent',
+        { booking_id: booking.id }
+      );
 
-    if (error) {
-      Alert.alert('Booking failed', error.message);
-    } else {
+      // 3) Present Stripe PaymentSheet (cards + Apple Pay / Google Pay).
+      const init = await initPaymentSheet({
+        merchantDisplayName: 'SparkHour',
+        paymentIntentClientSecret: clientSecret,
+        allowsDelayedPaymentMethods: false,
+        googlePay: { merchantCountryCode: 'AE', testEnv: true, currencyCode: 'AED' },
+        applePay: { merchantCountryCode: 'AE' },
+        returnURL: 'sparkhour://stripe-redirect',
+      });
+      if (init.error) throw new Error(init.error.message);
+
+      const { error: sheetErr } = await presentPaymentSheet();
+      setIsSubmitting(false);
+      if (sheetErr) {
+        // Cancelled or failed — the booking stays pending/unpaid (the expire-holds
+        // cron releases an unconfirmed hold). Only surface real failures.
+        if (sheetErr.code !== 'Canceled') Alert.alert('Payment not completed', sheetErr.message);
+        return;
+      }
+
+      // Success — the Stripe webhook finalizes (transaction + tax invoice email).
+      const confirmed = booking.status === 'approved';
       Alert.alert(
-        'Booking requested! 🎉',
-        'The host will confirm your booking shortly.',
+        confirmed ? 'Booking confirmed! 🎉' : 'Payment secured! 🎉',
+        confirmed
+          ? 'Your studio is booked. See My Bookings for details.'
+          : 'Your card is held — you are only charged when the host accepts. We will notify you.',
         [{ text: 'OK', onPress: () => router.replace('/(tabs)/bookings') }]
       );
+    } catch (e) {
+      setIsSubmitting(false);
+      Alert.alert('Booking failed', e instanceof Error ? e.message : 'Something went wrong. Please try again.');
     }
   }
 
@@ -192,7 +220,8 @@ export default function BookingScreen() {
               <Text style={styles.totalValue}>AED {subtotal.toLocaleString()}</Text>
             </View>
             <Text style={styles.paymentNote}>
-              Payment will be processed after host confirmation.
+              Pay securely on the next step. For Request to Book, your card is only
+              held until the host accepts. 5% VAT is added at checkout.
             </Text>
           </View>
         </ScrollView>
@@ -205,7 +234,7 @@ export default function BookingScreen() {
             activeOpacity={0.85}
           >
             <Text style={styles.bookBtnText}>
-              {isSubmitting ? 'Requesting…' : `Request Booking · AED ${subtotal.toLocaleString()}`}
+              {isSubmitting ? 'Processing…' : 'Continue to Payment'}
             </Text>
           </TouchableOpacity>
         </View>

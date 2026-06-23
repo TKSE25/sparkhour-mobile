@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { StyleSheet } from 'react-native';
 import { useAuthListener } from '../hooks/useAuth';
 import { useAuthStore } from '../store/authStore';
@@ -37,6 +38,10 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
+      <StripeProvider
+        publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
+        merchantIdentifier="merchant.ae.sparkhour.app"
+      >
       <StatusBar style="light" />
       <AuthGate />
       <Stack screenOptions={{ headerShown: false }}>
@@ -61,6 +66,7 @@ export default function RootLayout() {
         />
         <Stack.Screen name="+not-found" />
       </Stack>
+      </StripeProvider>
     </GestureHandlerRootView>
   );
 }
