@@ -68,7 +68,13 @@
       "typedRoutes": true
     },
     "extra": {
-      "eas": {}
-    }
+      "eas": {
+        "projectId": "1f37ad2b-1263-4c0d-9eba-45273145afdf"
+      },
+      "router": {
+        "origin": false
+      }
+    },
+    "owner": "sparkhour"
   }
 }
