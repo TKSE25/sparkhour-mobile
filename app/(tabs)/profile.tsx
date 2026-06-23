@@ -3,6 +3,7 @@ import {
   Alert,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/colors';
 import { useAuthStore } from '../../store/authStore';
 import { signOut } from '../../hooks/useAuth';
+import { supabase } from '../../lib/supabase';
 
 interface MenuItemProps {
   icon: string;
@@ -47,6 +49,19 @@ function MenuItem({ icon, label, onPress, danger = false, badge }: MenuItemProps
 export default function ProfileScreen() {
   const { profile } = useAuthStore();
   const router = useRouter();
+
+  async function handleReferral() {
+    let code = (profile as { referral_code?: string } | null)?.referral_code;
+    if (!code && profile?.id) {
+      const { data } = await supabase.from('profiles').select('referral_code').eq('id', profile.id).single();
+      code = (data as { referral_code?: string } | null)?.referral_code;
+    }
+    const link = code ? `https://www.sparkhour.ae/?ref=${code}` : 'https://www.sparkhour.ae';
+    const message = code
+      ? `Join me on SparkHour — book creative studios in Dubai by the hour. Use my code ${code}: ${link}`
+      : `Check out SparkHour — book creative studios in Dubai by the hour: ${link}`;
+    try { await Share.share({ message }); } catch { /* user dismissed */ }
+  }
 
   async function handleSignOut() {
     Alert.alert('Sign out?', 'You will need to sign in again.', [
@@ -100,7 +115,7 @@ export default function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>More</Text>
-          <MenuItem icon="gift-outline" label="Referrals & Rewards" onPress={() => {}} badge="New" />
+          <MenuItem icon="gift-outline" label="Refer a friend" onPress={handleReferral} badge="Share" />
           <MenuItem icon="star-outline" label="My Reviews" onPress={() => {}} />
           <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => {}} />
           <MenuItem icon="document-text-outline" label="Privacy Policy" onPress={() => {}} />
