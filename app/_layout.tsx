@@ -72,6 +72,10 @@ export default function RootLayout() {
             headerTintColor: '#1e1245',
           }}
         />
+        <Stack.Screen
+          name="messages/[id]"
+          options={{ headerShown: true, headerTintColor: '#1e1245' }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
       </StripeProvider>
