@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
+  Alert,
   FlatList,
   RefreshControl,
   SafeAreaView,
@@ -7,80 +8,103 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/colors';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store/authStore';
-import { Booking } from '../../types';
+import { apiGet, apiPatch } from '../../lib/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
+
+interface GuestBooking {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  total_amount: number;
+  status: string;
+  payment_status: string;
+  space?: { title?: string; cover_image?: string; area?: string } | null;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   pending: Colors.orange,
-  confirmed: Colors.success,
-  cancelled: Colors.error,
+  approved: Colors.success,
   completed: Colors.purple,
+  cancelled: Colors.error,
+  declined: Colors.error,
+  expired: Colors.gray400,
+  no_show: Colors.gray400,
 };
 
+// Build a Date from a booking's date (YYYY-MM-DD) + start_time (HH:MM[:SS]) in UAE.
+function bookingStart(b: GuestBooking): number {
+  if (!b.date) return 0;
+  const hhmm = String(b.start_time || '00:00').slice(0, 5);
+  return new Date(`${b.date}T${hhmm}:00+04:00`).getTime();
+}
+
 export default function BookingsScreen() {
-  const { user } = useAuthStore();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookings, setBookings] = useState<GuestBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
 
-  async function fetchBookings() {
-    if (!user) return;
+  const fetchBookings = useCallback(async () => {
     setIsLoading(true);
-    const { data } = await supabase
-      .from('bookings')
-      .select(`
-        id, space_id, start_time, end_time, total_price, status, payment_status, created_at,
-        spaces(id, name, images, image_urls, area, category)
-      `)
-      .eq('guest_id', user.id)
-      .order('start_time', { ascending: false });
-    setBookings((data as unknown as Booking[]) ?? []);
-    setIsLoading(false);
-  }
+    try {
+      const res = await apiGet<{ bookings: GuestBooking[] }>('/api/bookings?role=guest');
+      setBookings(res.bookings || []);
+    } catch {
+      setBookings([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { fetchBookings(); }, [user]);
+  useFocusEffect(useCallback(() => { fetchBookings(); }, [fetchBookings]));
 
-  const now = new Date().toISOString();
-  const filtered = bookings.filter((b) =>
-    activeTab === 'upcoming'
-      ? b.end_time > now && b.status !== 'cancelled'
-      : b.end_time <= now || b.status === 'cancelled'
-  );
+  const now = Date.now();
+  const filtered = bookings.filter((b) => {
+    const isCancelled = b.status === 'cancelled' || b.status === 'declined' || b.status === 'expired';
+    const isFuture = bookingStart(b) >= now && b.status !== 'completed';
+    return activeTab === 'upcoming' ? isFuture && !isCancelled : !isFuture || isCancelled;
+  });
 
-  function getImage(b: Booking) {
-    const imgs = b.spaces?.images ?? b.spaces?.image_urls ?? [];
-    return imgs.length > 0 ? imgs[0] : null;
-  }
-
-  async function handleCancel(id: string) {
-    Alert.alert('Cancel booking?', 'This cannot be undone.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Cancel booking',
-        style: 'destructive',
-        onPress: async () => {
-          await supabase
-            .from('bookings')
-            .update({ status: 'cancelled' })
-            .eq('id', id);
-          fetchBookings();
+  function handleCancel(b: GuestBooking) {
+    Alert.alert(
+      'Cancel booking?',
+      'A refund is applied based on the studio\'s cancellation policy.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Cancel booking',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await apiPatch<{ refund?: { refund_amount?: number } }>(
+                `/api/bookings/${b.id}`,
+                { status: 'cancelled' }
+              );
+              const refund = res?.refund?.refund_amount ?? 0;
+              Alert.alert(
+                'Booking cancelled',
+                refund > 0 ? `AED ${refund.toFixed(2)} will be refunded to your card.` : 'No refund is due per the cancellation policy.'
+              );
+              fetchBookings();
+            } catch (e) {
+              Alert.alert('Could not cancel', e instanceof Error ? e.message : 'Please try again.');
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   }
 
-  const renderBooking = ({ item }: { item: Booking }) => {
-    const img = getImage(item);
+  const renderBooking = ({ item }: { item: GuestBooking }) => {
+    const img = item.space?.cover_image || null;
     const statusColor = STATUS_COLORS[item.status] ?? Colors.gray400;
-    const start = new Date(item.start_time);
-    const end = new Date(item.end_time);
+    const d = item.date ? new Date(`${item.date}T00:00:00`) : null;
+    const canCancel = (item.status === 'pending' || item.status === 'approved') && bookingStart(item) >= now;
 
     return (
       <View style={styles.card}>
@@ -93,28 +117,23 @@ export default function BookingsScreen() {
         )}
         <View style={styles.cardBody}>
           <View style={styles.cardHeader}>
-            <Text style={styles.spaceName}>{item.spaces?.name ?? 'Studio'}</Text>
+            <Text style={styles.spaceName} numberOfLines={1}>{item.space?.title ?? 'Studio'}</Text>
             <View style={[styles.statusBadge, { backgroundColor: statusColor + '22' }]}>
               <Text style={[styles.statusText, { color: statusColor }]}>
-                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                {item.status === 'approved' ? 'Confirmed' : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
               </Text>
             </View>
           </View>
+          {item.space?.area ? <Text style={styles.areaText}>{item.space.area}</Text> : null}
           <Text style={styles.dateText}>
-            {start.toLocaleDateString('en-AE', { weekday: 'short', month: 'short', day: 'numeric' })}
-          </Text>
-          <Text style={styles.timeText}>
-            {start.toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}
-            {' – '}
-            {end.toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}
+            {d ? d.toLocaleDateString('en-AE', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}
+            {'  ·  '}
+            {String(item.start_time).slice(0, 5)}–{String(item.end_time).slice(0, 5)}
           </Text>
           <View style={styles.cardFooter}>
-            <Text style={styles.price}>AED {item.total_price?.toLocaleString()}</Text>
-            {item.status === 'confirmed' && item.end_time > now && (
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => handleCancel(item.id)}
-              >
+            <Text style={styles.price}>AED {Number(item.total_amount || 0).toLocaleString()}</Text>
+            {canCancel && (
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => handleCancel(item)}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
             )}
@@ -171,10 +190,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   title: { fontSize: 26, fontWeight: '800', color: Colors.navy },
   tabs: { flexDirection: 'row', paddingHorizontal: 20, gap: 8, marginBottom: 8 },
-  tab: {
-    flex: 1, paddingVertical: 10, borderRadius: 10,
-    backgroundColor: Colors.gray100, alignItems: 'center',
-  },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.gray100, alignItems: 'center' },
   tabActive: { backgroundColor: Colors.purple },
   tabText: { fontSize: 14, fontWeight: '600', color: Colors.gray600 },
   tabTextActive: { color: Colors.white },
@@ -187,18 +203,15 @@ const styles = StyleSheet.create({
   cardImage: { width: '100%', height: 130, backgroundColor: Colors.gray100 },
   imagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
   cardBody: { padding: 14, gap: 4 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   spaceName: { fontSize: 15, fontWeight: '700', color: Colors.navy, flex: 1 },
   statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   statusText: { fontSize: 11, fontWeight: '700' },
+  areaText: { fontSize: 12, color: Colors.gray400 },
   dateText: { fontSize: 13, color: Colors.gray600 },
-  timeText: { fontSize: 13, color: Colors.gray400 },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   price: { fontSize: 15, fontWeight: '700', color: Colors.purple },
-  cancelBtn: {
-    borderWidth: 1, borderColor: Colors.error, borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 5,
-  },
+  cancelBtn: { borderWidth: 1, borderColor: Colors.error, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   cancelText: { fontSize: 12, color: Colors.error, fontWeight: '600' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   emptyTitle: { fontSize: 16, color: Colors.gray400, fontWeight: '600' },
