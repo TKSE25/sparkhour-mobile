@@ -8,6 +8,32 @@ interface UseStudiosOptions {
   limit?: number;
 }
 
+// The shared DB columns are title/area/max_guests/review_count/cover_image/
+// status — NOT name/location/capacity/total_reviews/is_active. Alias them to the
+// Space shape the screens expect; images is jsonb [{url}] so it's normalized to
+// a string[] (cover first).
+const SELECT_COLS =
+  'id, host_id, name:title, slug, description, category, area, price_per_hour, day_rate, capacity:max_guests, amenities, images, cover_image, status, rating, total_reviews:review_count, created_at';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeSpace(row: any): Space {
+  const imgs: string[] = [];
+  if (row.cover_image) imgs.push(row.cover_image);
+  if (Array.isArray(row.images)) {
+    for (const im of row.images) {
+      const url = typeof im === 'string' ? im : im?.url;
+      if (url && !imgs.includes(url)) imgs.push(url);
+    }
+  }
+  return {
+    ...row,
+    location: row.location ?? row.area ?? null,
+    images: imgs,
+    image_urls: imgs,
+    is_active: row.status === 'active',
+  } as Space;
+}
+
 export function useStudios({ category, search, limit = 20 }: UseStudiosOptions = {}) {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,12 +46,8 @@ export function useStudios({ category, search, limit = 20 }: UseStudiosOptions =
     try {
       let query = supabase
         .from('spaces')
-        .select(`
-          id, host_id, name, description, category, area, location,
-          price_per_hour, capacity, amenities, images, image_urls,
-          is_active, rating, total_reviews, created_at
-        `)
-        .eq('is_active', true)
+        .select(SELECT_COLS)
+        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -34,13 +56,13 @@ export function useStudios({ category, search, limit = 20 }: UseStudiosOptions =
       }
 
       if (search && search.trim()) {
-        query = query.ilike('name', `%${search.trim()}%`);
+        query = query.or(`title.ilike.%${search.trim()}%,area.ilike.%${search.trim()}%`);
       }
 
       const { data, error: fetchError } = await query;
 
       if (fetchError) throw fetchError;
-      setSpaces((data as Space[]) ?? []);
+      setSpaces(((data as unknown as Record<string, unknown>[]) ?? []).map(normalizeSpace));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load studios');
     } finally {
@@ -66,11 +88,11 @@ export function useSpace(id: string) {
       setIsLoading(true);
       const { data, error: fetchError } = await supabase
         .from('spaces')
-        .select('*, profiles(full_name, avatar_url)')
+        .select(`${SELECT_COLS}, profiles:profiles!host_id(full_name, avatar_url)`)
         .eq('id', id)
         .single();
       if (fetchError) setError(fetchError.message);
-      else setSpace(data as Space);
+      else setSpace(normalizeSpace(data));
       setIsLoading(false);
     })();
   }, [id]);
