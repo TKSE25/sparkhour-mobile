@@ -49,6 +49,12 @@ export default function StudioCard({ space, onPress, wide = false }: Props) {
             {space.category?.charAt(0).toUpperCase() + (space.category?.slice(1) ?? '')}
           </Text>
         </View>
+        {space.instant_book ? (
+          <View style={styles.instantBadge}>
+            <Ionicons name="flash" size={10} color={Colors.white} />
+            <Text style={styles.instantText}>Instant</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.info}>
@@ -76,7 +82,10 @@ export default function StudioCard({ space, onPress, wide = false }: Props) {
           {space.rating != null && (
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={11} color={Colors.yellow} />
-              <Text style={styles.rating}>{space.rating.toFixed(1)}</Text>
+              <Text style={styles.rating}>
+                {space.rating.toFixed(1)}
+                {space.total_reviews ? ` (${space.total_reviews})` : ''}
+              </Text>
             </View>
           )}
         </View>
@@ -129,6 +138,23 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 10,
     fontWeight: '600',
+  },
+  instantBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#16a34a',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  instantText: {
+    color: Colors.white,
+    fontSize: 9,
+    fontWeight: '800',
   },
   info: {
     padding: 10,

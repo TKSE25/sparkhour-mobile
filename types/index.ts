@@ -24,6 +24,7 @@ export interface Space {
   is_active: boolean;
   rating: number | null;
   total_reviews: number | null;
+  instant_book?: boolean | null;
   created_at: string;
   profiles?: Pick<Profile, 'full_name' | 'avatar_url'>;
 }

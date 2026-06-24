@@ -13,7 +13,7 @@ interface UseStudiosOptions {
 // Space shape the screens expect; images is jsonb [{url}] so it's normalized to
 // a string[] (cover first).
 const SELECT_COLS =
-  'id, host_id, name:title, slug, description, category, area, price_per_hour, day_rate, capacity:max_guests, amenities, images, cover_image, status, rating, total_reviews:review_count, created_at';
+  'id, host_id, name:title, slug, description, category, area, price_per_hour, day_rate, capacity:max_guests, amenities, images, cover_image, status, rating, total_reviews:review_count, instant_book, created_at';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeSpace(row: any): Space {
