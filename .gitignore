@@ -44,3 +44,6 @@ yarn-error.*
 # dev QR artifacts
 qr.png
 sparkhour-qr.png
+
+# FCM (local only - EAS uploads it at build time)
+google-services.json
